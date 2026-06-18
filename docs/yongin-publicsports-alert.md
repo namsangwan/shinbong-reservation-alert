@@ -5,7 +5,7 @@
 - 대상: 용인시 공공체육시설 통합예약 일반예약
 - 시설: 신봉 배수지 축구장
 - 조건: 평일 20:00~22:00 예약 취소분 또는 예약 가능 슬롯
-- 주기: 매시 7분/37분
+- 주기: 매시 13분/43분
 - 알림: Telegram
 
 ## 현재 확인한 사실
@@ -25,7 +25,7 @@
 ## 추천 구조
 
 ```text
-GitHub Actions cron, 매시 7분/37분
+GitHub Actions cron, 매시 13분/43분
   -> scripts/crawl-yongin.js
   -> 공개 목록에서 신봉 배수지 축구장 접수중 예약 찾기
   -> 신청 시간표 URL 조회
@@ -66,7 +66,7 @@ TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... npm run check
 
 ## 운영 메모
 
-- 매시 7분/37분에 실행하면서 로그인 세션이 유지되는지 확인한다.
+- 매시 13분/43분에 실행하면서 로그인 세션이 유지되는지 확인한다.
 - 정상 크롤링도 Telegram으로 알려주도록 GitHub Actions에서 `TELEGRAM_NOTIFY_STATUS=1`을 설정한다.
 - 공공 사이트에 불필요한 반복 요청을 보내지 않도록 대상 검색 결과와 접수중 예약만 조회한다.
 - `YONGIN_COOKIE`는 계정 세션이므로 GitHub Secrets에만 저장하고 로그에 출력하지 않는다.

@@ -1,13 +1,13 @@
 # Shinbong Reservation Alert
 
-신봉 배수지 축구장 평일 20:00~22:00 예약 취소분을 매시 7분/37분에 확인하고 Telegram으로 알려주는 GitHub Actions 크롤러입니다.
+신봉 배수지 축구장 평일 20:00~22:00 예약 취소분을 매시 13분/43분에 확인하고 Telegram으로 알려주는 GitHub Actions 크롤러입니다.
 
 ## What It Checks
 
 - 사이트: 용인시 공공체육시설 통합예약
 - 시설: 신봉 배수지 축구장
 - 조건: 평일 20:00~22:00
-- 주기: 매시 7분/37분
+- 주기: 매시 13분/43분
 - 알림: Telegram
 
 ## Required Secrets
