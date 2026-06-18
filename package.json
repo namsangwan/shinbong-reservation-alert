@@ -1,0 +1,13 @@
+{
+  "name": "yongin-publicsports-alert",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node scripts/crawl-yongin.js",
+    "check:dry": "DRY_RUN=1 node scripts/crawl-yongin.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
