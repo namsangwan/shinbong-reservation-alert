@@ -10,7 +10,7 @@
 - 시설: 신봉 배수지 축구장
 - 조건: 평일 20:00~22:00
 - 주기: 외부 cron에서 30분마다 GitHub Actions 수동 실행 API 호출
-- 알림: Telegram
+- 알림: Telegram. 정상 크롤링 메시지에는 시간대별 예약 가능 날짜 목록도 포함합니다.
 
 ## Required Secrets
 

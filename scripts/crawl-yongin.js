@@ -75,8 +75,13 @@ async function main() {
   const newSlots = await filterNewSlots(candidates);
   if (newSlots.length === 0) {
     console.log("새로 발견된 평일 20:00~22:00 예약 가능 슬롯이 없습니다.");
-    if (!CONFIG.dryRun && CONFIG.notifyStatus) {
-      await sendTelegram(buildStatusMessage(reservations, checks));
+    if (CONFIG.notifyStatus) {
+      const statusMessage = buildStatusMessage(reservations, checks);
+      console.log("");
+      console.log(statusMessage);
+      if (!CONFIG.dryRun) {
+        await sendTelegram(statusMessage);
+      }
     }
     return;
   }
@@ -183,15 +188,18 @@ async function checkReservationSlots(reservation) {
       message: message || "로그인 필요 응답",
       html,
       availableSlots: [],
+      allAvailableSlots: [],
     };
   }
 
+  const availability = await parseReservationAvailability(html, reservation);
   return {
     reservation,
     authRequired: false,
     message: "",
     html,
-    availableSlots: await parseAvailableSlots(html, reservation),
+    availableSlots: availability.targetSlots,
+    allAvailableSlots: availability.allSlots,
   };
 }
 
@@ -203,28 +211,38 @@ function isAuthBlockedPage(html, message) {
   );
 }
 
-async function parseAvailableSlots(html, reservation) {
-  const slots = [];
-  const availableDates = parseAvailableCalendarDates(html).filter(isWeekday);
+async function parseReservationAvailability(html, reservation) {
+  const targetSlots = [];
+  const allSlots = [];
+  const availableDates = parseAvailableCalendarDates(html);
 
   for (const date of availableDates) {
     const timeData = await fetchTimeData(reservation.resveId, date);
-    const targetSlot = (timeData.resveTmList || []).find((slot) => normalizeTimeRange(slot.timeContent) === targetTimeRange());
-    if (!targetSlot) continue;
+    for (const slot of timeData.resveTmList || []) {
+      const time = normalizeTimeRange(slot.timeContent);
+      const availableSlot = {
+        id: `${reservation.resveId}:${date}:${time}`,
+        facilityName: TARGET.facilityName,
+        title: reservation.title,
+        date,
+        weekday: WEEKDAY_LABELS[new Date(`${date}T00:00:00+09:00`).getDay()],
+        time,
+        url: reservation.applyUrl,
+        sourceText: JSON.stringify(slot),
+      };
 
-    slots.push({
-      id: `${reservation.resveId}:${date}:${targetTimeRange()}`,
-      facilityName: TARGET.facilityName,
-      title: reservation.title,
-      date,
-      weekday: WEEKDAY_LABELS[new Date(`${date}T00:00:00+09:00`).getDay()],
-      time: targetTimeRange(),
-      url: reservation.applyUrl,
-      sourceText: JSON.stringify(targetSlot),
-    });
+      allSlots.push(availableSlot);
+
+      if (time === targetTimeRange() && isWeekday(date)) {
+        targetSlots.push(availableSlot);
+      }
+    }
   }
 
-  return dedupeById(slots);
+  return {
+    targetSlots: dedupeById(targetSlots),
+    allSlots: dedupeById(allSlots),
+  };
 }
 
 function parseAvailableCalendarDates(html) {
@@ -324,6 +342,7 @@ function buildAlertMessage(slots) {
 function buildStatusMessage(reservations, checks) {
   const now = formatKst(new Date());
   const checkedDates = checks.reduce((count, check) => count + parseAvailableCalendarDates(check.html || "").filter(isWeekday).length, 0);
+  const allAvailableSlots = checks.flatMap((check) => check.allAvailableSlots || []);
   const lines = [
     "[용인시 체육시설 크롤링 정상]",
     "",
@@ -340,7 +359,35 @@ function buildStatusMessage(reservations, checks) {
   }
 
   lines.push("", `확인한 평일 접수가능 날짜 수: ${checkedDates}`);
+  lines.push("", "예약 가능한 날짜/시간:");
+  lines.push(...formatAvailabilityByTime(allAvailableSlots));
   return lines.join("\n");
+}
+
+function formatAvailabilityByTime(slots) {
+  if (slots.length === 0) {
+    return ["- 없음"];
+  }
+
+  const byTime = new Map();
+  for (const slot of slots) {
+    if (!byTime.has(slot.time)) byTime.set(slot.time, []);
+    byTime.get(slot.time).push(`${formatShortDate(slot.date)}(${slot.weekday})`);
+  }
+
+  return [...byTime.entries()]
+    .sort(([timeA], [timeB]) => timeA.localeCompare(timeB))
+    .map(([time, dates]) => `- ${time}: ${compactDateList(dedupeStrings(dates))}`);
+}
+
+function formatShortDate(date) {
+  const [, month, day] = date.match(/^\d{4}-(\d{2})-(\d{2})$/) || [];
+  return month && day ? `${month}/${day}` : date;
+}
+
+function compactDateList(dates, limit = 30) {
+  if (dates.length <= limit) return dates.join(", ");
+  return `${dates.slice(0, limit).join(", ")} 외 ${dates.length - limit}개`;
 }
 
 function buildAuthBlockedMessage(authBlocked) {
@@ -502,6 +549,10 @@ function dedupeById(slots) {
     seen.add(slot.id);
     return true;
   });
+}
+
+function dedupeStrings(values) {
+  return [...new Set(values)];
 }
 
 main().catch((error) => {
