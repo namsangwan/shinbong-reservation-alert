@@ -33,7 +33,13 @@ async function main() {
   const activeReservations = reservations.filter((item) => item.status.includes("접수중"));
 
   if (reservations.length === 0) {
-    throw new Error(`목록에서 '${TARGET.facilityName}' 예약 항목을 찾지 못했습니다.`);
+    const message = buildTargetMissingMessage();
+    console.log(message);
+    if (!CONFIG.dryRun) {
+      await sendTelegram(message);
+    }
+    process.exitCode = 2;
+    return;
   }
 
   if (activeReservations.length === 0) {
@@ -85,19 +91,42 @@ async function main() {
 }
 
 async function findTargetReservations() {
-  const body = new URLSearchParams({
-    searchFcltyGu: TARGET.gu,
-    searchFcltyEmd: TARGET.emd,
-    searchFcltyFieldNm: TARGET.field,
-    _searchFcltyFieldNm: "on",
+  const searches = [
+    buildSearchParams({
+      searchFcltyGu: TARGET.gu,
+      searchFcltyEmd: TARGET.emd,
+      searchFcltyFieldNm: TARGET.field,
+      _searchFcltyFieldNm: "on",
+    }),
+    buildSearchParams({
+      searchKrwd: "신봉",
+    }),
+    buildSearchParams({
+      searchKrwd: TARGET.facilityName,
+    }),
+  ];
+
+  for (const searchParams of searches) {
+    const reservations = await fetchReservationSearch(searchParams);
+    if (reservations.length > 0) return reservations;
+  }
+
+  return [];
+}
+
+function buildSearchParams(extraParams) {
+  return new URLSearchParams({
     pageUnit: "8",
     pageIndex: "1",
     checkSearchMonthNow: "false",
+    ...extraParams,
   });
+}
 
-  const html = await request(`${BASE_URL}${LIST_PATH}?key=${CONFIG.key}&searchResveType=${CONFIG.searchResveType}`, {
+async function fetchReservationSearch(searchParams) {
+  const html = await requestWithRetry(`${BASE_URL}${LIST_PATH}?key=${CONFIG.key}&searchResveType=${CONFIG.searchResveType}`, {
     method: "POST",
-    body,
+    body: searchParams,
     headers: {
       "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
     },
@@ -144,7 +173,7 @@ function buildApplyUrl(resveId) {
 }
 
 async function checkReservationSlots(reservation) {
-  const html = await request(reservation.applyUrl);
+  const html = await requestWithRetry(reservation.applyUrl);
   const message = extractMessage(html);
 
   if (isAuthBlockedPage(html, message)) {
@@ -213,7 +242,7 @@ async function fetchTimeData(resveId, date) {
     resveId,
   });
 
-  const raw = await request(`${BASE_URL}${TIME_PATH}`, {
+  const raw = await requestWithRetry(`${BASE_URL}${TIME_PATH}`, {
     method: "POST",
     body,
     headers: {
@@ -335,6 +364,19 @@ function buildAuthBlockedMessage(authBlocked) {
   return lines.join("\n");
 }
 
+function buildTargetMissingMessage() {
+  return [
+    "[용인시 체육시설 크롤링 경고]",
+    "",
+    `확인시각: ${formatKst(new Date())}`,
+    `시설: ${TARGET.facilityName}`,
+    "상태: 예약 목록에서 대상 시설을 찾지 못했습니다.",
+    "",
+    "가능한 원인: 용인시 사이트 일시 응답 이상, 검색 결과 구조 변경, 접수 월 전환 중 일시적 공백.",
+    "조치: 다음 실행에서 자동 재시도합니다. 같은 경고가 반복되면 사이트 화면 또는 크롤러 파서를 확인하세요.",
+  ].join("\n");
+}
+
 function formatKst(date) {
   return new Intl.DateTimeFormat("ko-KR", {
     timeZone: "Asia/Seoul",
@@ -369,6 +411,21 @@ async function sendTelegram(message) {
   }
 }
 
+async function requestWithRetry(url, options = {}, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await request(url, options);
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        await sleep(1000 * attempt);
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function request(url, options = {}) {
   const headers = {
     "user-agent": "Mozilla/5.0 (compatible; YonginPublicSportsAlert/0.1; +https://github.com/)",
@@ -387,6 +444,10 @@ async function request(url, options = {}) {
   }
 
   return text;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function extractMessage(html) {
