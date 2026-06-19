@@ -5,7 +5,7 @@
 - 대상: 용인시 공공체육시설 통합예약 일반예약
 - 시설: 신봉 배수지 축구장
 - 조건: 평일 20:00~22:00 예약 취소분 또는 예약 가능 슬롯
-- 주기: 매시 13분/43분
+- 주기: 외부 cron 서비스에서 30분마다 GitHub Actions `workflow_dispatch` 호출
 - 알림: Telegram
 
 ## 현재 확인한 사실
@@ -25,7 +25,9 @@
 ## 추천 구조
 
 ```text
-GitHub Actions cron, 매시 13분/43분
+외부 cron 서비스, 30분마다
+  -> GitHub Actions workflow_dispatch API 호출
+  -> Yongin public sports alert workflow 실행
   -> scripts/crawl-yongin.js
   -> 공개 목록에서 신봉 배수지 축구장 접수중 예약 찾기
   -> 신청 시간표 URL 조회
@@ -50,6 +52,59 @@ GitHub Actions cron, 매시 13분/43분
 - `TELEGRAM_CHAT_ID`: 알림 받을 채팅 ID
 - `YONGIN_COOKIE`: 로그인된 용인시 예약 사이트 쿠키. 예: `JSESSIONID=...`
 
+## 외부 cron 설정
+
+GitHub Actions 자체 `schedule` 이벤트는 지연되거나 누락될 수 있다. 안정적인 주기 실행을 위해 외부 cron 서비스에서 GitHub Actions 수동 실행 API를 호출한다.
+
+권장 서비스는 `cron-job.org`다.
+
+```text
+URL:
+https://api.github.com/repos/namsangwan/shinbong-reservation-alert/actions/workflows/yongin-publicsports-alert.yml/dispatches
+
+Method:
+POST
+
+Headers:
+Accept: application/vnd.github+json
+Authorization: Bearer <GITHUB_TOKEN>
+X-GitHub-Api-Version: 2022-11-28
+Content-Type: application/json
+
+Body:
+{"ref":"main"}
+
+Schedule:
+Every 30 minutes
+```
+
+`GITHUB_TOKEN`은 repository의 Actions workflow를 실행할 수 있는 GitHub Personal Access Token이다. Fine-grained token을 권장한다.
+
+필요 권한:
+
+```text
+Repository access: namsangwan/shinbong-reservation-alert
+Actions: Read and write
+Contents: Read-only
+Metadata: Read-only
+```
+
+curl 테스트:
+
+```bash
+curl -L \
+  -X POST \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer <GITHUB_TOKEN>" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  -H "Content-Type: application/json" \
+  https://api.github.com/repos/namsangwan/shinbong-reservation-alert/actions/workflows/yongin-publicsports-alert.yml/dispatches \
+  -d '{"ref":"main"}' \
+  -w "\nHTTP_STATUS=%{http_code}\n"
+```
+
+성공하면 응답 본문 없이 `HTTP_STATUS=204`가 출력된다.
+
 ## 로컬 실행
 
 ```bash
@@ -66,7 +121,8 @@ TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... npm run check
 
 ## 운영 메모
 
-- 매시 13분/43분에 실행하면서 로그인 세션이 유지되는지 확인한다.
+- 외부 cron이 30분마다 GitHub Actions 수동 실행 API를 호출한다.
+- GitHub Actions workflow에는 보조용 `schedule`도 남겨두었지만, 안정적인 운영 기준은 외부 cron이다.
 - 정상 크롤링도 Telegram으로 알려주도록 GitHub Actions에서 `TELEGRAM_NOTIFY_STATUS=1`을 설정한다.
 - 공공 사이트에 불필요한 반복 요청을 보내지 않도록 대상 검색 결과와 접수중 예약만 조회한다.
 - `YONGIN_COOKIE`는 계정 세션이므로 GitHub Secrets에만 저장하고 로그에 출력하지 않는다.
