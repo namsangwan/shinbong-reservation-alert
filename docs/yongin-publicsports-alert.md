@@ -33,8 +33,8 @@
   -> 신청 시간표 URL 조회
   -> 평일 20:00~22:00 예약 가능 슬롯 필터링
   -> 새 슬롯이면 Telegram 취소분 알림
-  -> 새 슬롯이 없어도 시간대별 예약 가능 날짜 목록을 포함한 정상 크롤링 상태 알림
-  -> 로그인 세션이 풀리면 Telegram 경고 알림
+  -> 빈 시간이 없으면 조용히 종료
+  -> 로그인 세션 만료, 대상 시설 조회 실패, 예상치 못한 오류는 Telegram 경고 알림
   -> 알림 이력 .state/yongin-notified.json 갱신
 ```
 
@@ -123,6 +123,7 @@ TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... npm run check
 
 - 외부 cron이 30분마다 GitHub Actions 수동 실행 API를 호출한다.
 - GitHub Actions workflow에는 보조용 `schedule`도 남겨두었지만, 안정적인 운영 기준은 외부 cron이다.
-- 정상 크롤링도 Telegram으로 알려주도록 GitHub Actions에서 `TELEGRAM_NOTIFY_STATUS=1`을 설정한다. 이 메시지에는 `06:00~08:00: 07/01(수), ...`처럼 시간대별 예약 가능 날짜 목록이 포함된다.
+- 정상 크롤링이고 평일 `20:00~22:00` 빈 시간이 없으면 Telegram을 보내지 않는다.
+- 로그인 세션 만료, 대상 시설/접수중 예약 조회 실패, 크롤러 예외처럼 수습이 필요한 경우에는 Telegram 경고를 보낸다.
 - 공공 사이트에 불필요한 반복 요청을 보내지 않도록 대상 검색 결과와 접수중 예약만 조회한다.
 - `YONGIN_COOKIE`는 계정 세션이므로 GitHub Secrets에만 저장하고 로그에 출력하지 않는다.

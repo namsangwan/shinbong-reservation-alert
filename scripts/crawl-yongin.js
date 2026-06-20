@@ -23,7 +23,6 @@ const CONFIG = {
   cookie: process.env.YONGIN_COOKIE || "",
   telegramToken: process.env.TELEGRAM_BOT_TOKEN || "",
   telegramChatId: process.env.TELEGRAM_CHAT_ID || "",
-  notifyStatus: process.env.TELEGRAM_NOTIFY_STATUS === "1",
 };
 
 const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -43,8 +42,13 @@ async function main() {
   }
 
   if (activeReservations.length === 0) {
-    console.log("대상 시설은 찾았지만 현재 접수중인 월이 없습니다.");
+    const message = buildNoActiveReservationMessage(reservations);
+    console.log(message);
     printReservations(reservations);
+    if (!CONFIG.dryRun) {
+      await sendTelegram(message);
+    }
+    process.exitCode = 2;
     return;
   }
 
@@ -75,14 +79,6 @@ async function main() {
   const newSlots = await filterNewSlots(candidates);
   if (newSlots.length === 0) {
     console.log("새로 발견된 평일 20:00~22:00 예약 가능 슬롯이 없습니다.");
-    if (CONFIG.notifyStatus) {
-      const statusMessage = buildStatusMessage(reservations, checks);
-      console.log("");
-      console.log(statusMessage);
-      if (!CONFIG.dryRun) {
-        await sendTelegram(statusMessage);
-      }
-    }
     return;
   }
 
@@ -188,18 +184,15 @@ async function checkReservationSlots(reservation) {
       message: message || "로그인 필요 응답",
       html,
       availableSlots: [],
-      allAvailableSlots: [],
     };
   }
 
-  const availability = await parseReservationAvailability(html, reservation);
   return {
     reservation,
     authRequired: false,
     message: "",
     html,
-    availableSlots: availability.targetSlots,
-    allAvailableSlots: availability.allSlots,
+    availableSlots: await parseAvailableSlots(html, reservation),
   };
 }
 
@@ -211,38 +204,28 @@ function isAuthBlockedPage(html, message) {
   );
 }
 
-async function parseReservationAvailability(html, reservation) {
-  const targetSlots = [];
-  const allSlots = [];
-  const availableDates = parseAvailableCalendarDates(html);
+async function parseAvailableSlots(html, reservation) {
+  const slots = [];
+  const availableDates = parseAvailableCalendarDates(html).filter(isWeekday);
 
   for (const date of availableDates) {
     const timeData = await fetchTimeData(reservation.resveId, date);
-    for (const slot of timeData.resveTmList || []) {
-      const time = normalizeTimeRange(slot.timeContent);
-      const availableSlot = {
-        id: `${reservation.resveId}:${date}:${time}`,
-        facilityName: TARGET.facilityName,
-        title: reservation.title,
-        date,
-        weekday: WEEKDAY_LABELS[new Date(`${date}T00:00:00+09:00`).getDay()],
-        time,
-        url: reservation.applyUrl,
-        sourceText: JSON.stringify(slot),
-      };
+    const targetSlot = (timeData.resveTmList || []).find((slot) => normalizeTimeRange(slot.timeContent) === targetTimeRange());
+    if (!targetSlot) continue;
 
-      allSlots.push(availableSlot);
-
-      if (time === targetTimeRange() && isWeekday(date)) {
-        targetSlots.push(availableSlot);
-      }
-    }
+    slots.push({
+      id: `${reservation.resveId}:${date}:${targetTimeRange()}`,
+      facilityName: TARGET.facilityName,
+      title: reservation.title,
+      date,
+      weekday: WEEKDAY_LABELS[new Date(`${date}T00:00:00+09:00`).getDay()],
+      time: targetTimeRange(),
+      url: reservation.applyUrl,
+      sourceText: JSON.stringify(targetSlot),
+    });
   }
 
-  return {
-    targetSlots: dedupeById(targetSlots),
-    allSlots: dedupeById(allSlots),
-  };
+  return dedupeById(slots);
 }
 
 function parseAvailableCalendarDates(html) {
@@ -339,57 +322,6 @@ function buildAlertMessage(slots) {
   return lines.join("\n");
 }
 
-function buildStatusMessage(reservations, checks) {
-  const now = formatKst(new Date());
-  const checkedDates = checks.reduce((count, check) => count + parseAvailableCalendarDates(check.html || "").filter(isWeekday).length, 0);
-  const allAvailableSlots = checks.flatMap((check) => check.allAvailableSlots || []);
-  const lines = [
-    "[용인시 체육시설 크롤링 정상]",
-    "",
-    `확인시각: ${now}`,
-    `시설: ${TARGET.facilityName}`,
-    `조건: 평일 ${TARGET.startTime}~${TARGET.endTime}`,
-    `결과: 새 예약 가능 슬롯 없음`,
-    "",
-    "검색 결과:",
-  ];
-
-  for (const item of reservations) {
-    lines.push(`- ${item.title} / ${item.status} / ${item.usePeriod || "이용기간 알 수 없음"}`);
-  }
-
-  lines.push("", `확인한 평일 접수가능 날짜 수: ${checkedDates}`);
-  lines.push("", "예약 가능한 날짜/시간:");
-  lines.push(...formatAvailabilityByTime(allAvailableSlots));
-  return lines.join("\n");
-}
-
-function formatAvailabilityByTime(slots) {
-  if (slots.length === 0) {
-    return ["- 없음"];
-  }
-
-  const byTime = new Map();
-  for (const slot of slots) {
-    if (!byTime.has(slot.time)) byTime.set(slot.time, []);
-    byTime.get(slot.time).push(`${formatShortDate(slot.date)}(${slot.weekday})`);
-  }
-
-  return [...byTime.entries()]
-    .sort(([timeA], [timeB]) => timeA.localeCompare(timeB))
-    .map(([time, dates]) => `- ${time}: ${compactDateList(dedupeStrings(dates))}`);
-}
-
-function formatShortDate(date) {
-  const [, month, day] = date.match(/^\d{4}-(\d{2})-(\d{2})$/) || [];
-  return month && day ? `${month}/${day}` : date;
-}
-
-function compactDateList(dates, limit = 30) {
-  if (dates.length <= limit) return dates.join(", ");
-  return `${dates.slice(0, limit).join(", ")} 외 ${dates.length - limit}개`;
-}
-
 function buildAuthBlockedMessage(authBlocked) {
   const now = formatKst(new Date());
   const lines = [
@@ -411,6 +343,24 @@ function buildAuthBlockedMessage(authBlocked) {
   return lines.join("\n");
 }
 
+function buildNoActiveReservationMessage(reservations) {
+  const lines = [
+    "[용인시 체육시설 크롤링 경고]",
+    "",
+    `확인시각: ${formatKst(new Date())}`,
+    `시설: ${TARGET.facilityName}`,
+    "상태: 대상 시설은 찾았지만 현재 접수중인 예약 월이 없습니다.",
+    "",
+    "검색 결과:",
+  ];
+
+  for (const item of reservations) {
+    lines.push(`- ${item.title} / ${item.status} / ${item.usePeriod || "이용기간 알 수 없음"}`);
+  }
+
+  return lines.join("\n");
+}
+
 function buildTargetMissingMessage() {
   return [
     "[용인시 체육시설 크롤링 경고]",
@@ -421,6 +371,19 @@ function buildTargetMissingMessage() {
     "",
     "가능한 원인: 용인시 사이트 일시 응답 이상, 검색 결과 구조 변경, 접수 월 전환 중 일시적 공백.",
     "조치: 다음 실행에서 자동 재시도합니다. 같은 경고가 반복되면 사이트 화면 또는 크롤러 파서를 확인하세요.",
+  ].join("\n");
+}
+
+function buildUnhandledErrorMessage(error) {
+  const message = error?.stack || error?.message || String(error);
+  return [
+    "[용인시 체육시설 크롤링 경고]",
+    "",
+    `확인시각: ${formatKst(new Date())}`,
+    `시설: ${TARGET.facilityName}`,
+    "상태: 크롤러 실행 중 예상하지 못한 오류가 발생했습니다.",
+    "",
+    message.slice(0, 1200),
   ].join("\n");
 }
 
@@ -439,7 +402,7 @@ function formatKst(date) {
 
 async function sendTelegram(message) {
   if (!CONFIG.telegramToken || !CONFIG.telegramChatId) {
-    throw new Error("예약 가능 슬롯을 찾았지만 Telegram secret이 없어 알림을 보낼 수 없습니다.");
+    throw new Error("Telegram secret이 없어 알림을 보낼 수 없습니다.");
   }
 
   const url = `https://api.telegram.org/bot${CONFIG.telegramToken}/sendMessage`;
@@ -456,6 +419,10 @@ async function sendTelegram(message) {
   if (!response.ok) {
     throw new Error(`Telegram 전송 실패: ${response.status} ${await response.text()}`);
   }
+}
+
+function canSendTelegram() {
+  return Boolean(CONFIG.telegramToken && CONFIG.telegramChatId);
 }
 
 async function requestWithRetry(url, options = {}, attempts = 3) {
@@ -551,11 +518,14 @@ function dedupeById(slots) {
   });
 }
 
-function dedupeStrings(values) {
-  return [...new Set(values)];
-}
-
-main().catch((error) => {
+main().catch(async (error) => {
   console.error(error.stack || error.message);
+  if (!CONFIG.dryRun && canSendTelegram()) {
+    try {
+      await sendTelegram(buildUnhandledErrorMessage(error));
+    } catch (telegramError) {
+      console.error(telegramError.stack || telegramError.message);
+    }
+  }
   process.exitCode = 1;
 });
