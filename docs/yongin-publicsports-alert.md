@@ -35,6 +35,7 @@
   -> 새 슬롯이면 Telegram 취소분 알림
   -> 빈 시간이 없으면 조용히 종료
   -> 로그인 세션 만료, 대상 시설 조회 실패, 예상치 못한 오류는 Telegram 경고 알림
+  -> 단, 경고 알림은 KST 00:00~07:00 조용한 시간대에는 보내지 않음
   -> 알림 이력 .state/yongin-notified.json 갱신
 ```
 
@@ -125,5 +126,7 @@ TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... npm run check
 - GitHub Actions workflow에는 보조용 `schedule`도 남겨두었지만, 안정적인 운영 기준은 외부 cron이다.
 - 정상 크롤링이고 평일 `20:00~22:00` 빈 시간이 없으면 Telegram을 보내지 않는다.
 - 로그인 세션 만료, 대상 시설/접수중 예약 조회 실패, 크롤러 예외처럼 수습이 필요한 경우에는 Telegram 경고를 보낸다.
+- 경고 알림은 기본적으로 KST `00:00~07:00`에는 보내지 않는다. 필요하면 `QUIET_HOURS_START`, `QUIET_HOURS_END` 환경변수로 조정할 수 있다.
+- 평일 `20:00~22:00` 빈 시간 발견 알림은 조용한 시간대와 관계없이 보낸다.
 - 공공 사이트에 불필요한 반복 요청을 보내지 않도록 대상 검색 결과와 접수중 예약만 조회한다.
 - `YONGIN_COOKIE`는 계정 세션이므로 GitHub Secrets에만 저장하고 로그에 출력하지 않는다.

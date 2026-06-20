@@ -23,6 +23,8 @@ const CONFIG = {
   cookie: process.env.YONGIN_COOKIE || "",
   telegramToken: process.env.TELEGRAM_BOT_TOKEN || "",
   telegramChatId: process.env.TELEGRAM_CHAT_ID || "",
+  quietHoursStart: Number(process.env.QUIET_HOURS_START || "0"),
+  quietHoursEnd: Number(process.env.QUIET_HOURS_END || "7"),
 };
 
 const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -35,7 +37,7 @@ async function main() {
     const message = buildTargetMissingMessage();
     console.log(message);
     if (!CONFIG.dryRun) {
-      await sendTelegram(message);
+      await sendErrorTelegram(message);
     }
     process.exitCode = 2;
     return;
@@ -46,7 +48,7 @@ async function main() {
     console.log(message);
     printReservations(reservations);
     if (!CONFIG.dryRun) {
-      await sendTelegram(message);
+      await sendErrorTelegram(message);
     }
     process.exitCode = 2;
     return;
@@ -70,7 +72,7 @@ async function main() {
       console.log(`- ${check.reservation.title}: ${check.message}`);
     }
     if (!CONFIG.dryRun) {
-      await sendTelegram(buildAuthBlockedMessage(authBlocked));
+      await sendErrorTelegram(buildAuthBlockedMessage(authBlocked));
     }
     process.exitCode = 2;
     return;
@@ -421,8 +423,36 @@ async function sendTelegram(message) {
   }
 }
 
+async function sendErrorTelegram(message) {
+  if (isQuietHours()) {
+    console.log(`조용한 시간대(${CONFIG.quietHoursStart}:00~${CONFIG.quietHoursEnd}:00 KST)라 경고 텔레그램을 보내지 않습니다.`);
+    return;
+  }
+  await sendTelegram(message);
+}
+
 function canSendTelegram() {
   return Boolean(CONFIG.telegramToken && CONFIG.telegramChatId);
+}
+
+function isQuietHours(date = new Date()) {
+  const hour = getKstHour(date);
+  const start = CONFIG.quietHoursStart;
+  const end = CONFIG.quietHoursEnd;
+
+  if (start === end) return false;
+  if (start < end) return hour >= start && hour < end;
+  return hour >= start || hour < end;
+}
+
+function getKstHour(date) {
+  const hour = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    hourCycle: "h23",
+    hour12: false,
+  }).format(date);
+  return Number(hour);
 }
 
 async function requestWithRetry(url, options = {}, attempts = 3) {
@@ -522,7 +552,7 @@ main().catch(async (error) => {
   console.error(error.stack || error.message);
   if (!CONFIG.dryRun && canSendTelegram()) {
     try {
-      await sendTelegram(buildUnhandledErrorMessage(error));
+      await sendErrorTelegram(buildUnhandledErrorMessage(error));
     } catch (telegramError) {
       console.error(telegramError.stack || telegramError.message);
     }
