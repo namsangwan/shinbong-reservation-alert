@@ -455,6 +455,10 @@ function getKstHour(date) {
   return Number(hour);
 }
 
+function isTransientUpstreamError(error) {
+  return [502, 503, 504].includes(error?.status);
+}
+
 async function requestWithRetry(url, options = {}, attempts = 3) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -484,7 +488,11 @@ async function request(url, options = {}) {
   const text = await response.text();
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} ${response.statusText}: ${url}\n${text.slice(0, 500)}`);
+    const error = new Error(`HTTP ${response.status} ${response.statusText}: ${url}\n${text.slice(0, 500)}`);
+    error.status = response.status;
+    error.statusText = response.statusText;
+    error.url = url;
+    throw error;
   }
 
   return text;
@@ -549,6 +557,12 @@ function dedupeById(slots) {
 }
 
 main().catch(async (error) => {
+  if (isTransientUpstreamError(error)) {
+    console.log(`용인시 서버 일시 오류(${error.status})라 알림 없이 정상 종료합니다.`);
+    process.exitCode = 0;
+    return;
+  }
+
   console.error(error.stack || error.message);
   if (!CONFIG.dryRun && canSendTelegram()) {
     try {
