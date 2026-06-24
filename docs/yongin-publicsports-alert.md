@@ -34,8 +34,9 @@
   -> 평일 20:00~22:00 예약 가능 슬롯 필터링
   -> 새 슬롯이면 Telegram 취소분 알림
   -> 빈 시간이 없으면 조용히 종료
-  -> 로그인 세션 만료, 대상 시설 조회 실패, 예상치 못한 오류는 Telegram 경고 알림
-  -> 단, 경고 알림은 KST 00:00~07:00 조용한 시간대에는 보내지 않음
+  -> 크롤링 경고 알림은 기본적으로 보내지 않음
+  -> 필요하면 TELEGRAM_NOTIFY_ERRORS=1로 경고 알림 활성화
+  -> 경고 알림 활성화 시에도 KST 00:00~07:00 조용한 시간대에는 보내지 않음
   -> 용인시 서버 502/503/504 일시 장애는 알림 없이 정상 종료
   -> 알림 이력 .state/yongin-notified.json 갱신
 ```
@@ -56,7 +57,7 @@
 
 ## 외부 cron 설정
 
-GitHub Actions 자체 `schedule` 이벤트는 지연되거나 누락될 수 있다. 안정적인 주기 실행을 위해 외부 cron 서비스에서 GitHub Actions 수동 실행 API를 호출한다.
+GitHub Actions 자체 `schedule` 이벤트는 지연되거나 누락될 수 있다. 중복 실행과 불필요한 실패 알림을 줄이기 위해 현재 workflow에는 `schedule`을 두지 않고, 외부 cron 서비스에서 GitHub Actions 수동 실행 API만 호출한다.
 
 권장 서비스는 `cron-job.org`다.
 
@@ -124,9 +125,11 @@ TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... npm run check
 ## 운영 메모
 
 - 외부 cron이 30분마다 GitHub Actions 수동 실행 API를 호출한다.
-- GitHub Actions workflow에는 보조용 `schedule`도 남겨두었지만, 안정적인 운영 기준은 외부 cron이다.
+- GitHub Actions workflow는 `workflow_dispatch`만 사용하고, 주기 실행은 외부 cron이 담당한다.
 - 정상 크롤링이고 평일 `20:00~22:00` 빈 시간이 없으면 Telegram을 보내지 않는다.
-- 로그인 세션 만료, 대상 시설/접수중 예약 조회 실패, 크롤러 예외처럼 수습이 필요한 경우에는 Telegram 경고를 보낸다.
+- 크롤링 경고 Telegram은 기본적으로 보내지 않는다. 필요하면 workflow 환경변수에 `TELEGRAM_NOTIFY_ERRORS=1`을 추가한다.
+- 대상 시설/접수중 예약 조회 실패는 용인시 사이트의 순간적인 응답 이상일 수 있어, 경고 알림이 꺼져 있으면 성공 종료한다.
+- 로그인 세션 만료나 크롤러 예외는 로그에 남기고 실패 종료한다. 단, 경고 Telegram은 `TELEGRAM_NOTIFY_ERRORS=1`일 때만 보낸다.
 - 용인시 서버가 `502/503/504`를 반환하면 일시 장애로 보고 Telegram 없이 성공 종료한다.
 - 경고 알림은 기본적으로 KST `00:00~07:00`에는 보내지 않는다. 필요하면 `QUIET_HOURS_START`, `QUIET_HOURS_END` 환경변수로 조정할 수 있다.
 - 평일 `20:00~22:00` 빈 시간 발견 알림은 조용한 시간대와 관계없이 보낸다.

@@ -23,6 +23,7 @@ const CONFIG = {
   cookie: process.env.YONGIN_COOKIE || "",
   telegramToken: process.env.TELEGRAM_BOT_TOKEN || "",
   telegramChatId: process.env.TELEGRAM_CHAT_ID || "",
+  notifyErrors: process.env.TELEGRAM_NOTIFY_ERRORS === "1",
   quietHoursStart: Number(process.env.QUIET_HOURS_START || "0"),
   quietHoursEnd: Number(process.env.QUIET_HOURS_END || "7"),
 };
@@ -37,9 +38,9 @@ async function main() {
     const message = buildTargetMissingMessage();
     console.log(message);
     if (!CONFIG.dryRun) {
-      await sendErrorTelegram(message);
+      await maybeSendErrorTelegram(message);
     }
-    process.exitCode = 2;
+    process.exitCode = CONFIG.notifyErrors ? 2 : 0;
     return;
   }
 
@@ -48,9 +49,9 @@ async function main() {
     console.log(message);
     printReservations(reservations);
     if (!CONFIG.dryRun) {
-      await sendErrorTelegram(message);
+      await maybeSendErrorTelegram(message);
     }
-    process.exitCode = 2;
+    process.exitCode = CONFIG.notifyErrors ? 2 : 0;
     return;
   }
 
@@ -72,7 +73,7 @@ async function main() {
       console.log(`- ${check.reservation.title}: ${check.message}`);
     }
     if (!CONFIG.dryRun) {
-      await sendErrorTelegram(buildAuthBlockedMessage(authBlocked));
+      await maybeSendErrorTelegram(buildAuthBlockedMessage(authBlocked));
     }
     process.exitCode = 2;
     return;
@@ -431,6 +432,14 @@ async function sendErrorTelegram(message) {
   await sendTelegram(message);
 }
 
+async function maybeSendErrorTelegram(message) {
+  if (!CONFIG.notifyErrors) {
+    console.log("TELEGRAM_NOTIFY_ERRORS=1이 아니라서 경고 텔레그램을 보내지 않습니다.");
+    return;
+  }
+  await sendErrorTelegram(message);
+}
+
 function canSendTelegram() {
   return Boolean(CONFIG.telegramToken && CONFIG.telegramChatId);
 }
@@ -566,7 +575,7 @@ main().catch(async (error) => {
   console.error(error.stack || error.message);
   if (!CONFIG.dryRun && canSendTelegram()) {
     try {
-      await sendErrorTelegram(buildUnhandledErrorMessage(error));
+      await maybeSendErrorTelegram(buildUnhandledErrorMessage(error));
     } catch (telegramError) {
       console.error(telegramError.stack || telegramError.message);
     }

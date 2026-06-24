@@ -2,7 +2,7 @@
 
 신봉 배수지 축구장 평일 20:00~22:00 예약 취소분을 확인하고 Telegram으로 알려주는 GitHub Actions 크롤러입니다.
 
-운영은 외부 cron 서비스가 GitHub Actions `workflow_dispatch` API를 30분마다 호출하는 방식을 권장합니다. GitHub Actions 자체 `schedule`도 남겨두었지만, GitHub 스케줄은 지연되거나 누락될 수 있습니다.
+운영은 외부 cron 서비스가 GitHub Actions `workflow_dispatch` API를 30분마다 호출하는 방식입니다. GitHub Actions 자체 `schedule`은 지연/누락과 중복 실행을 피하기 위해 사용하지 않습니다.
 
 ## What It Checks
 
@@ -10,7 +10,7 @@
 - 시설: 신봉 배수지 축구장
 - 조건: 평일 20:00~22:00
 - 주기: 외부 cron에서 30분마다 GitHub Actions 수동 실행 API 호출
-- 알림: Telegram. 평일 20:00~22:00 빈 시간이 발견되면 항상 보내고, 로그인 세션 만료/조회 실패 같은 경고는 KST 00:00~07:00에는 보내지 않습니다.
+- 알림: Telegram. 평일 20:00~22:00 빈 시간이 발견되면 항상 보냅니다. 크롤링 경고 알림은 기본적으로 보내지 않고, 필요하면 `TELEGRAM_NOTIFY_ERRORS=1`로 켭니다.
 - 용인시 서버의 일시적인 `502/503/504` 오류는 알림 없이 정상 종료합니다.
 
 ## Required Secrets

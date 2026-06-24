@@ -2,8 +2,6 @@ name: Yongin public sports alert
 
 "on":
   workflow_dispatch:
-  schedule:
-    - cron: "13,43 * * * *"
 
 permissions:
   contents: write
